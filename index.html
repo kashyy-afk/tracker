@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Study Tracker</title>
+<meta name="theme-color" content="#0B0D10">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tracker">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #0B0D10;
+    color: #E7E9EC;
+    font-family: 'Inter', system-ui, sans-serif;
+    padding: 18px 14px 40px;
+    min-height: 100vh;
+  }
+  .container { max-width: 480px; margin: 0 auto; }
+  button { font-family: inherit; }
+  input:focus, button:focus { outline: 2px solid #F5C147; outline-offset: 2px; }
+
+  /* ---- Calendar view ---- */
+  .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .cal-title { font-size: 19px; font-weight: 700; }
+  .nav-btn { background: #15181D; border: 1px solid #262B33; color: #E7E9EC; width: 34px; height: 34px; border-radius: 8px; font-size: 16px; cursor: pointer; }
+  .nav-group { display: flex; gap: 8px; }
+  .today-btn { background: transparent; border: 1px solid #262B33; color: #8B93A1; font-size: 12px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .preset-btn { background: transparent; border: 1px solid #3A2E14; color: #F5C147; font-size: 12px; padding: 6px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 16px; }
+  .preset-btn:hover { background: #191510; }
+
+  .weekday-row { display: grid; grid-template-columns: repeat(7, 1fr); margin-bottom: 6px; }
+  .weekday { text-align: center; font-size: 11px; color: #5A616D; font-weight: 600; padding: 4px 0; }
+
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .day-cell { aspect-ratio: 1; border-radius: 10px; border: 1px solid #1C2027; background: #12151A; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; padding: 4px; }
+  .day-cell.empty { border: none; background: transparent; cursor: default; }
+  .day-cell.today { border-color: #F5C147; }
+  .day-cell.has-hours { border-color: #2A3550; background: #11162A; }
+  .day-num { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 500; }
+  .day-cell.today .day-num { color: #F5C147; }
+  .day-hours { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #6C8CFF; margin-top: 2px; font-weight: 600; }
+  .day-bled { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #E5484D; margin-top: 1px; font-weight: 600; }
+
+  .month-summary { text-align: center; font-size: 12px; color: #5A616D; margin-top: 16px; }
+
+  /* ---- Day view ---- */
+  .day-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .back-btn { background: #15181D; border: 1px solid #262B33; color: #E7E9EC; width: 34px; height: 34px; border-radius: 8px; font-size: 16px; cursor: pointer; flex-shrink: 0; }
+  .day-title { font-size: 18px; font-weight: 700; }
+  .day-subtitle { font-size: 12px; color: #8B93A1; margin-top: 2px; }
+
+  .clock-row { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 14px; }
+  .label { font-size: 11px; letter-spacing: 0.08em; color: #8B93A1; font-weight: 600; margin-bottom: 4px; }
+  .clock { font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 500; line-height: 1; }
+  .remaining-box { text-align: right; }
+  .remaining { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 600; color: #F5C147; }
+
+  .stats-row { display: flex; gap: 8px; margin-bottom: 14px; }
+  .hours-summary { flex: 1; background: #131A15; border: 1px solid #2A3A2E; border-radius: 12px; padding: 10px 6px; text-align: center; }
+  .hours-summary .val { font-family: 'IBM Plex Mono', monospace; font-size: 17px; font-weight: 600; color: #3FA66B; }
+  .hours-summary .cap { font-size: 9px; color: #8B93A1; letter-spacing: 0.03em; margin-top: 2px; }
+  .hours-summary.bled { background: #1A1213; border-color: #4A1F22; }
+  .hours-summary.bled .val { color: #E5484D; }
+  .hours-summary.focus { background: #11162A; border-color: #2A3550; }
+  .hours-summary.focus .val { color: #6C8CFF; }
+  .hours-summary.break { background: #17131F; border-color: #3A2A4A; }
+  .hours-summary.break .val { color: #B98CFF; }
+
+  .banner { display: flex; align-items: center; gap: 12px; background: #191510; border: 1px solid #3A2E14; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px; }
+  .banner.gap { background: transparent; border: 1px dashed #262B33; color: #8B93A1; font-size: 13px; padding: 12px 16px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #F5C147; flex-shrink: 0; animation: pulse 2s ease-in-out infinite; }
+  .banner-label { font-size: 15px; font-weight: 600; }
+  .banner-sub { font-size: 12.5px; color: #8B93A1; margin-top: 2px; }
+  .countdown { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 600; color: #F5C147; }
+
+  .timeline-row { display: flex; gap: 12px; }
+  .track { display: flex; flex-direction: column; align-items: center; width: 20px; flex-shrink: 0; }
+  .node { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 12px; cursor: pointer; font-size: 11px; }
+  .node.manual { background: #3FA66B; border: 2px solid #3FA66B; color: #0B0D10; }
+  .node.bled { background: #E5484D; border: 2px solid #E5484D; color: #0B0D10; }
+  .node.current { background: #F5C147; border: 2px solid #F5C147; animation: pulse 2s ease-in-out infinite; }
+  .node.past { background: #20242B; border: 2px solid #3A3F48; }
+  .node.upcoming { background: transparent; border: 2px solid #3A3F48; }
+  /* a slot that is BOTH marked complete and marked bled: keep the green done
+     node but ring it in red so the bled mark is still visible */
+  .node.bled-flag { box-shadow: 0 0 0 2px #0B0D10, 0 0 0 4px #E5484D; }
+  .line { width: 2px; flex: 1; background: #20242B; min-height: 22px; }
+
+  .slot-card { flex: 1; display: flex; flex-direction: column; align-items: stretch; gap: 8px; background: #15181D; border: 1px solid #262B33; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .card-top { display: flex; align-items: center; gap: 10px; }
+  .slot-card.manual { border-color: #2A3A2E; }
+  .slot-card.bled { border-color: #4A1F22; }
+  .slot-card.current { border-color: #F5C147; }
+  .slot-card.past { opacity: 0.75; }
+  .focus-btn { align-self: flex-start; background: transparent; border: 1px solid #2A3550; color: #6C8CFF; font-size: 12px; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-family: 'IBM Plex Mono', monospace; }
+  .focus-btn:hover { background: #11162A; }
+  .focus-btn.running { background: #141B2E; border-color: #6C8CFF; color: #8FA8FF; }
+  .focus-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .focus-btn:disabled:hover { background: transparent; }
+  .focus-controls { display: flex; align-items: center; gap: 8px; }
+  .focus-countdown { flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #8FA8FF; }
+  .reset-btn { background: transparent; border: 1px solid #3A3F48; color: #8B93A1; font-size: 12px; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+  .reset-btn:hover { background: #1A1D22; }
+  .stop-btn { background: #141B2E; border: 1px solid #6C8CFF; color: #8FA8FF; font-size: 12px; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-family: 'IBM Plex Mono', monospace; }
+  .stop-btn:hover { background: #182042; }
+  .time-inputs { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  input[type="time"] { background: #0B0D10; border: 1px solid #262B33; border-radius: 6px; color: #E7E9EC; font-family: 'IBM Plex Mono', monospace; font-size: 13px; padding: 5px 4px; width: 84px; }
+  input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.6); }
+  .dash { color: #8B93A1; font-size: 12px; }
+  .label-input { flex: 1; min-width: 0; width: 100%; background: transparent; border: none; color: #E7E9EC; font-size: 14px; padding: 6px 2px; font-family: inherit; cursor: pointer; }
+  select.label-input option { background: #15181D; color: #E7E9EC; }
+  .slot-card.manual .label-input { color: #8B93A1; text-decoration: line-through; }
+  .slot-card.bled .label-input { color: #E5A0A3; text-decoration: line-through; }
+  /* per-slot focus/bled breakup — lives inside the focus area, so the existing
+     1s refresh keeps it live with no extra wiring */
+  .slot-stats { display: flex; gap: 12px; margin-top: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+  .slot-stat { color: #5A616D; }
+  .slot-stat b { font-weight: 600; }
+  .slot-stat.focus b { color: #6C8CFF; }
+  .slot-stat.bled b { color: #E5484D; }
+  .label-input.label-custom { cursor: text; border-bottom: 1px solid #F5C147; }
+  .label-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .label-tab { background: #15181D; border: 1px solid #262B33; border-radius: 20px; padding: 6px 12px; font-size: 12.5px; font-family: 'IBM Plex Mono', monospace; color: #E7E9EC; }
+  .label-summary-empty { font-size: 12.5px; color: #5A616D; margin-bottom: 16px; }
+  .del-btn { background: transparent; border: none; color: #5A616D; padding: 6px; cursor: pointer; flex-shrink: 0; font-size: 15px; }
+  .del-btn:hover { color: #E7E9EC; }
+
+  .add-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; background: #15181D; border: 1px dashed #3A3F48; border-radius: 10px; color: #8B93A1; font-size: 14px; font-weight: 500; padding: 12px; cursor: pointer; margin-top: 4px; }
+  .add-btn:hover { color: #E7E9EC; border-color: #5A616D; }
+  .empty-note { text-align: center; color: #5A616D; font-size: 13px; padding: 20px 0; }
+  .footer { text-align: center; font-size: 11px; color: #4A505A; margin-top: 16px; }
+  .legend { display: flex; gap: 14px; justify-content: center; font-size: 10.5px; color: #5A616D; margin-top: 4px; margin-bottom: 18px; }
+  .legend span { display: inline-flex; align-items: center; gap: 4px; }
+  .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+  @media (prefers-reduced-motion: reduce) { .dot, .node.current { animation: none; } }
+
+  /* ---- sign-in overlay ---- */
+  .auth-overlay { position: fixed; inset: 0; background: #0B0D10; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .auth-overlay[hidden] { display: none; }
+  .auth-card { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 12px; }
+  .auth-title { font-size: 22px; font-weight: 700; }
+  .auth-sub { font-size: 13px; color: #5A616D; margin-bottom: 6px; line-height: 1.5; }
+  .auth-card input { background: #15181D; border: 1px solid #262B33; border-radius: 10px; color: #E7E9EC; font-family: inherit; font-size: 16px; padding: 12px; }
+  .auth-btn { background: #F5C147; border: none; border-radius: 10px; color: #0B0D10; font-size: 15px; font-weight: 600; padding: 13px; cursor: pointer; }
+  .auth-btn:disabled { opacity: 0.5; cursor: default; }
+  .auth-err { font-size: 12.5px; color: #E5484D; min-height: 16px; line-height: 1.4; }
+  .auth-link { background: none; border: none; color: #5A616D; font-size: 12.5px; text-decoration: underline; cursor: pointer; padding: 4px; }
+
+  /* ---- sync status pill (fixed, so the calendar layout is untouched) ---- */
+  .sync-pill { position: fixed; right: 12px; bottom: 12px; z-index: 40; display: flex; align-items: center; gap: 6px;
+    background: #15181D; border: 1px solid #262B33; border-radius: 20px; padding: 6px 11px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8B93A1; cursor: pointer; }
+  .sync-pill[hidden] { display: none; }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #5A616D; flex-shrink: 0; }
+  .sync-pill.synced .sync-dot { background: #3FA66B; }
+  .sync-pill.syncing .sync-dot { background: #F5C147; animation: pulse 1.4s ease-in-out infinite; }
+  .sync-pill.offline .sync-dot { background: #E5484D; }
+  .sync-menu { position: fixed; right: 12px; bottom: 50px; z-index: 41; background: #15181D; border: 1px solid #262B33; border-radius: 10px; overflow: hidden; min-width: 150px; }
+  .sync-menu[hidden] { display: none; }
+  .sync-menu button { display: block; width: 100%; text-align: left; background: none; border: none; color: #E7E9EC; font-size: 13px; padding: 11px 14px; cursor: pointer; }
+  .sync-menu button + button { border-top: 1px solid #262B33; }
+  .sync-menu button:hover { background: #1C2027; }
+  .sync-menu .danger { color: #E5A0A3; }
+</style>
+</head>
+<body>
+<div class="container" id="app"></div>
+
+<div class="sync-pill" id="sync-pill" hidden><span class="sync-dot"></span><span id="sync-text">local</span></div>
+<div class="sync-menu" id="sync-menu" hidden>
+  <button type="button" id="menu-sync">Sync now</button>
+  <button type="button" id="menu-signout" class="danger">Sign out</button>
+</div>
+
+<div class="auth-overlay" id="auth-overlay" hidden>
+  <form class="auth-card" id="auth-form">
+    <div class="auth-title">Study Tracker</div>
+    <div class="auth-sub" id="auth-sub">Sign in to keep your data backed up and synced across your phone and tablet.</div>
+    <input type="email" id="auth-email" placeholder="Email" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    <input type="password" id="auth-pass" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit" class="auth-btn" id="auth-btn">Sign in</button>
+    <div class="auth-err" id="auth-err"></div>
+    <button type="button" class="auth-link" id="auth-offline">Skip &mdash; use this device only</button>
+  </form>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/config.js"></script>
+
+<script>
+const STORAGE_KEY = 'schedule-calendar-data';
+let data = {};                   // { "YYYY-MM-DD": [ {id,start,end,label,done}, ... ] }
+let view = 'calendar';           // 'calendar' | 'day'
+const today = new Date();
+let calYear = today.getFullYear();
+let calMonth = today.getMonth(); // 0-indexed
+let activeDate = null;           // "YYYY-MM-DD" for day view
+const focusTimers = {};          // { [slotId]: { key, startedAt } } — in-memory, resets on reload
+
+// Local storage is the primary write target: it is instant, works offline, and
+// means the app is never blank. Supabase is the durable, cross-device copy.
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+};
+
+function load() {
+  try {
+    const raw = store.get(STORAGE_KEY);
+    if (raw) return normalize(JSON.parse(raw));
+  } catch (e) {}
+  return {};
+}
+function save() {
+  store.set(STORAGE_KEY, JSON.stringify(data));
+  scheduleFlush();
+}
+
+// `done` and `bled` are independent flags. Older data stored them as a single
+// mutually-exclusive `status` field, so migrate that on the way in.
+function normalize(obj) {
+  Object.keys(obj || {}).forEach(k => {
+    if (!Array.isArray(obj[k])) return;
+    obj[k].forEach(slot => {
+      if (slot.status !== undefined) {
+        slot.done = slot.status === 'done' || slot.done === true;
+        slot.bled = slot.status === 'bled';
+        delete slot.status;
+      } else {
+        slot.done = !!slot.done;
+        slot.bled = !!slot.bled;
+      }
+      slot.focusSeconds = slot.focusSeconds || 0;
+    });
+  });
+  return obj;
+}
+function pad(n) { return String(n).padStart(2, '0'); }
+function dateKey(y, m, d) { return `${y}-${pad(m + 1)}-${pad(d)}`; }
+function todayKey() { return dateKey(today.getFullYear(), today.getMonth(), today.getDate()); }
+
+function minutesOf(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+function dayHours(key) {
+  const slots = data[key] || [];
+  const totalMin = slots.filter(s => s.done).reduce((sum, s) => {
+    const diff = minutesOf(s.end) - minutesOf(s.start);
+    return sum + Math.max(diff, 0);
+  }, 0);
+  return totalMin / 60;
+}
+function bledHours(key) {
+  const slots = data[key] || [];
+  const now = new Date();
+  let totalSec = 0;
+  // bled accrues for every slot regardless of its completion mark — marking a
+  // session complete must never wipe out bled time
+  slots.forEach(s => { totalSec += slotBledOf(s, key, now); });
+  return totalSec / 3600;
+}
+function breakHours(key) {
+  const slots = (data[key] || []).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
+  if (slots.length < 2) return 0;
+  const spanMin = minutesOf(slots[slots.length - 1].end) - minutesOf(slots[0].start);
+  const scheduledMin = slots.reduce((sum, s) => sum + Math.max(minutesOf(s.end) - minutesOf(s.start), 0), 0);
+  return Math.max(spanMin - scheduledMin, 0) / 60;
+}
+function dayFocusHours(key) {
+  const slots = data[key] || [];
+  const now = new Date();
+  const totalSec = slots.reduce((sum, s) => sum + slotFocusSec(s, key, now), 0);
+  return totalSec / 3600;
+}
+function labelFocusHours(key, label) {
+  const slots = (data[key] || []).filter(s => (s.label || '') === label);
+  const now = new Date();
+  const totalSec = slots.reduce((sum, s) => sum + slotFocusSec(s, key, now), 0);
+  return totalSec / 3600;
+}
+function slotElapsedSec(slot, key, now) {
+  const start = combineDateTime(key, slot.start).getTime();
+  const end = combineDateTime(key, slot.end).getTime();
+  const nowMs = now.getTime();
+  return Math.max(0, Math.min(nowMs, end) - start) / 1000;
+}
+function slotFocusSec(slot, key, now) {
+  let sec = slot.focusSeconds || 0;
+  const timer = focusTimers[String(slot.id)];
+  if (timer) {
+    const end = combineDateTime(key, slot.end).getTime();
+    const cappedNow = Math.min(now.getTime(), end);
+    sec += Math.max(0, (cappedNow - timer.startedAt) / 1000);
+  }
+  return sec;
+}
+function slotBledSec(slot, key, now) {
+  return Math.max(slotElapsedSec(slot, key, now) - slotFocusSec(slot, key, now), 0);
+}
+// a manually-bled slot counts its whole scheduled duration as bled; otherwise
+// bled is whatever elapsed time wasn't spent in focus
+function slotBledOf(slot, key, now) {
+  if (slot.bled) return Math.max(minutesOf(slot.end) - minutesOf(slot.start), 0) * 60;
+  return slotBledSec(slot, key, now);
+}
+function setFlag(key, id, field, value) {
+  const slot = (data[key] || []).find(s => s.id === id);
+  if (!slot) return;
+  slot[field] = value;
+  save();
+}
+function fmtHours(h) {
+  if (h <= 0) return '0h';
+  const rounded = Math.round(h * 10) / 10;
+  return rounded % 1 === 0 ? rounded + 'h' : rounded.toFixed(1) + 'h';
+}
+function fmtHours2(h) {
+  if (h <= 0) return '0.00h';
+  return h.toFixed(2) + 'h';
+}
+
+// ---- live time helpers (combine a slot's clock time with the date being viewed) ----
+function combineDateTime(key, timeStr) {
+  const [y, m, d] = key.split('-').map(Number);
+  const [h, min] = timeStr.split(':').map(Number);
+  return new Date(y, m - 1, d, h, min, 0, 0);
+}
+function timeStatus(slot, key, now) {
+  const start = combineDateTime(key, slot.start);
+  const end = combineDateTime(key, slot.end);
+  if (now >= end) return 'past';
+  if (now >= start && now < end) return 'current';
+  return 'upcoming';
+}
+function remainingOf(slot, key, now) {
+  const start = combineDateTime(key, slot.start);
+  const end = combineDateTime(key, slot.end);
+  if (now >= end) return 0;
+  if (now >= start) return end - now;
+  return end - start;
+}
+function fmtDuration(ms) {
+  if (ms <= 0) return '0m';
+  const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h <= 0 ? m + 'm' : h + 'h ' + m + 'm';
+}
+function fmtCountdown(ms) {
+  if (ms <= 0) return '00:00:00';
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+}
+function fmtClock(d) {
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+}
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const WEEKDAYS = ['S','M','T','W','T','F','S'];
+const LABEL_OPTIONS = ['Audit', 'FR', 'AFM', 'IDT', 'DT'];
+
+const PRESET_SLOTS = [
+  { start: '08:30', end: '10:00', label: 'Audit' },
+  { start: '11:00', end: '12:00', label: 'Audit' },
+  { start: '13:00', end: '13:30', label: 'Audit' },
+  { start: '14:00', end: '17:00', label: 'FR' },
+  { start: '18:00', end: '20:00', label: 'FR' },
+  { start: '21:00', end: '23:00', label: 'FR' },
+];
+
+function applyPreset(key) {
+  if ((data[key] || []).length > 0) {
+    const ok = confirm('This replaces the existing slots for this day. Continue?');
+    if (!ok) return;
+  }
+  data[key] = PRESET_SLOTS.map((s, i) => ({
+    id: Date.now() + i,
+    start: s.start,
+    end: s.end,
+    label: s.label,
+    done: false,
+    bled: false,
+    focusSeconds: 0,
+  }));
+  save();
+  renderApp();
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = todayKey();
+  a.href = url;
+  a.download = 'tracker-data-' + stamp + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        alert('That file doesn\u2019t look like a valid export.');
+        return;
+      }
+      const ok = confirm('This replaces all current data with the imported file. Continue?');
+      if (!ok) return;
+      data = normalize(parsed);
+      save();
+      renderApp();
+    } catch (e) {
+      alert('Couldn\u2019t read that file — make sure it\u2019s a JSON export from this tracker.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderApp() {
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  if (view === 'calendar') app.appendChild(buildCalendarView());
+  else app.appendChild(buildDayView(activeDate));
+}
+
+function buildCalendarView() {
+  const wrap = document.createElement('div');
+
+  const header = document.createElement('div');
+  header.className = 'cal-header';
+  const title = document.createElement('div');
+  title.className = 'cal-title';
+  title.textContent = MONTH_NAMES[calMonth] + ' ' + calYear;
+  const navGroup = document.createElement('div');
+  navGroup.className = 'nav-group';
+  const prevBtn = document.createElement('button');
+  prevBtn.className = 'nav-btn';
+  prevBtn.textContent = '‹';
+  prevBtn.onclick = () => { changeMonth(-1); };
+  const nextBtn = document.createElement('button');
+  nextBtn.className = 'nav-btn';
+  nextBtn.textContent = '›';
+  nextBtn.onclick = () => { changeMonth(1); };
+  navGroup.append(prevBtn, nextBtn);
+  header.append(title, navGroup);
+  wrap.appendChild(header);
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'btn-row';
+
+  const todayBtn = document.createElement('button');
+  todayBtn.className = 'today-btn';
+  todayBtn.textContent = 'Jump to today';
+  todayBtn.onclick = () => {
+    calYear = today.getFullYear();
+    calMonth = today.getMonth();
+    renderApp();
+  };
+
+  const exportBtn = document.createElement('button');
+  exportBtn.className = 'today-btn';
+  exportBtn.textContent = 'Export data';
+  exportBtn.onclick = exportData;
+
+  const importBtn = document.createElement('button');
+  importBtn.className = 'today-btn';
+  importBtn.textContent = 'Import data';
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'application/json';
+  fileInput.style.display = 'none';
+  fileInput.onchange = e => { if (e.target.files[0]) importData(e.target.files[0]); };
+  importBtn.onclick = () => fileInput.click();
+
+  btnRow.append(todayBtn, exportBtn, importBtn, fileInput);
+  wrap.appendChild(btnRow);
+
+  const weekRow = document.createElement('div');
+  weekRow.className = 'weekday-row';
+  WEEKDAYS.forEach(w => {
+    const el = document.createElement('div');
+    el.className = 'weekday';
+    el.textContent = w;
+    weekRow.appendChild(el);
+  });
+  wrap.appendChild(weekRow);
+
+  const grid = document.createElement('div');
+  grid.className = 'cal-grid';
+  const firstWeekday = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+
+  for (let i = 0; i < firstWeekday; i++) {
+    const blank = document.createElement('div');
+    blank.className = 'day-cell empty';
+    grid.appendChild(blank);
+  }
+
+  let monthTotal = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = dateKey(calYear, calMonth, d);
+    const hours = dayFocusHours(key);
+    const bled = bledHours(key);
+    monthTotal += hours;
+    const cell = document.createElement('div');
+    cell.className = 'day-cell' + (key === todayKey() ? ' today' : '') + (hours > 0 ? ' has-hours' : '');
+    const num = document.createElement('div');
+    num.className = 'day-num';
+    num.textContent = d;
+    cell.appendChild(num);
+    if (hours > 0) {
+      const h = document.createElement('div');
+      h.className = 'day-hours';
+      h.textContent = fmtHours(hours);
+      cell.appendChild(h);
+    }
+    if (bled > 0) {
+      const b = document.createElement('div');
+      b.className = 'day-bled';
+      b.textContent = fmtHours(bled);
+      cell.appendChild(b);
+    }
+    cell.onclick = () => { activeDate = key; view = 'day'; renderApp(); };
+    grid.appendChild(cell);
+  }
+  wrap.appendChild(grid);
+
+  const summary = document.createElement('div');
+  summary.className = 'month-summary';
+  summary.textContent = fmtHours(monthTotal) + ' marked this month';
+  wrap.appendChild(summary);
+
+  return wrap;
+}
+
+function changeMonth(delta) {
+  calMonth += delta;
+  if (calMonth < 0) { calMonth = 11; calYear--; }
+  if (calMonth > 11) { calMonth = 0; calYear++; }
+  renderApp();
+}
+
+function buildDayView(key) {
+  const wrap = document.createElement('div');
+  const [y, m, d] = key.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+
+  const header = document.createElement('div');
+  header.className = 'day-header';
+  const backBtn = document.createElement('button');
+  backBtn.className = 'back-btn';
+  backBtn.textContent = '‹';
+  backBtn.onclick = () => { view = 'calendar'; renderApp(); };
+  const titleWrap = document.createElement('div');
+  const title = document.createElement('div');
+  title.className = 'day-title';
+  title.textContent = dateObj.toLocaleDateString([], { weekday: 'long', day: 'numeric' });
+  const subtitle = document.createElement('div');
+  subtitle.className = 'day-subtitle';
+  subtitle.textContent = dateObj.toLocaleDateString([], { month: 'long', year: 'numeric' }) + (key === todayKey() ? ' · Today' : '');
+  titleWrap.append(title, subtitle);
+  header.append(backBtn, titleWrap);
+  wrap.appendChild(header);
+
+  const presetBtn = document.createElement('button');
+  presetBtn.className = 'preset-btn';
+  presetBtn.textContent = 'Apply preset schedule';
+  presetBtn.onclick = () => { applyPreset(key); };
+  wrap.appendChild(presetBtn);
+
+  const clockRow = document.createElement('div');
+  clockRow.className = 'clock-row';
+  const clockCol = document.createElement('div');
+  const clockLbl = document.createElement('div');
+  clockLbl.className = 'label';
+  clockLbl.textContent = 'NOW';
+  const clock = document.createElement('div');
+  clock.className = 'clock';
+  clock.id = 'clock';
+  clockCol.append(clockLbl, clock);
+  const remBox = document.createElement('div');
+  remBox.className = 'remaining-box';
+  const remLbl = document.createElement('div');
+  remLbl.className = 'label';
+  remLbl.textContent = 'TIME LEFT THIS DAY';
+  const rem = document.createElement('div');
+  rem.className = 'remaining';
+  rem.id = 'remaining';
+  remBox.append(remLbl, rem);
+  clockRow.append(clockCol, remBox);
+  wrap.appendChild(clockRow);
+
+  const statsRow = document.createElement('div');
+  statsRow.className = 'stats-row';
+
+  const summary = document.createElement('div');
+  summary.className = 'hours-summary';
+  const val = document.createElement('div');
+  val.className = 'val';
+  val.id = 'day-hours-val';
+  val.textContent = fmtHours(dayHours(key));
+  const cap = document.createElement('div');
+  cap.className = 'cap';
+  cap.textContent = 'MARKED COMPLETE';
+  summary.append(val, cap);
+
+  const focusSummary = document.createElement('div');
+  focusSummary.className = 'hours-summary focus';
+  const focusVal = document.createElement('div');
+  focusVal.className = 'val';
+  focusVal.id = 'day-focus-val';
+  focusVal.textContent = fmtHours(dayFocusHours(key));
+  const focusCap = document.createElement('div');
+  focusCap.className = 'cap';
+  focusCap.textContent = 'FOCUS TIME';
+  focusSummary.append(focusVal, focusCap);
+
+  const bledSummary = document.createElement('div');
+  bledSummary.className = 'hours-summary bled';
+  const bledVal = document.createElement('div');
+  bledVal.className = 'val';
+  bledVal.id = 'day-bled-val';
+  bledVal.textContent = fmtHours(bledHours(key));
+  const bledCap = document.createElement('div');
+  bledCap.className = 'cap';
+  bledCap.textContent = 'TIME BLED';
+  bledSummary.append(bledVal, bledCap);
+
+  const breakSummary = document.createElement('div');
+  breakSummary.className = 'hours-summary break';
+  const breakVal = document.createElement('div');
+  breakVal.className = 'val';
+  breakVal.id = 'day-break-val';
+  breakVal.textContent = fmtHours(breakHours(key));
+  const breakCap = document.createElement('div');
+  breakCap.className = 'cap';
+  breakCap.textContent = 'BREAK TIME';
+  breakSummary.append(breakVal, breakCap);
+
+  statsRow.append(summary, focusSummary, bledSummary, breakSummary);
+  wrap.appendChild(statsRow);
+
+  const banner = document.createElement('div');
+  banner.id = 'banner';
+  wrap.appendChild(banner);
+
+  wrap.appendChild(buildLabelSummary(key));
+
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  legend.innerHTML =
+    '<span><i class="swatch" style="background:#3FA66B"></i>marked</span>' +
+    '<span><i class="swatch" style="background:#E5484D"></i>bled</span>' +
+    '<span><i class="swatch" style="background:#F5C147"></i>current</span>' +
+    '<span><i class="swatch" style="background:#3A3F48;border:2px solid #3A3F48"></i>upcoming</span>';
+  wrap.appendChild(legend);
+
+  const list = document.createElement('div');
+  list.id = 'slot-list';
+  wrap.appendChild(list);
+  renderSlotList(key, list);
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-btn';
+  addBtn.textContent = '+ Add slot';
+  addBtn.onclick = () => { addSlot(key); };
+  wrap.appendChild(addBtn);
+
+  const footer = document.createElement('div');
+  footer.className = 'footer';
+  footer.textContent = 'Tap a dot to mark complete, double-tap to mark bled · Tapping "Start now" on an upcoming slot pulls its start time to now and begins focus immediately · unclaimed elapsed time bleeds automatically';
+  wrap.appendChild(footer);
+
+  return wrap;
+}
+
+// ---- per-label focus-time summary tabs, e.g. "Audit · 2.26h" — day view only ----
+function buildLabelSummary(key) {
+  const wrap = document.createElement('div');
+  wrap.id = 'label-summary';
+  const used = new Set((data[key] || []).map(s => s.label).filter(Boolean));
+  const totals = allLabels()
+    .filter(label => used.has(label))
+    .map(label => ({ label, hours: labelFocusHours(key, label) }))
+    .filter(t => t.hours > 0);
+  if (totals.length === 0) {
+    wrap.className = 'label-summary-empty';
+    wrap.textContent = 'No focus time logged yet';
+    return wrap;
+  }
+  wrap.className = 'label-summary';
+  totals.forEach(t => {
+    const tab = document.createElement('div');
+    tab.className = 'label-tab';
+    tab.textContent = t.label + ' \u00b7 ' + fmtHours2(t.hours);
+    wrap.appendChild(tab);
+  });
+  return wrap;
+}
+function refreshLabelSummary(key) {
+  const el = document.getElementById('label-summary');
+  if (!el) return;
+  el.replaceWith(buildLabelSummary(key));
+}
+
+function renderSlotList(key, container) {
+  container.innerHTML = '';
+  const slots = (data[key] || []).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
+  const now = new Date();
+
+  if (slots.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-note';
+    empty.textContent = 'No slots yet — add one below';
+    container.appendChild(empty);
+    return;
+  }
+
+  slots.forEach((slot, i) => {
+    const auto = slot.done ? 'manual' : slot.bled ? 'bled' : timeStatus(slot, key, now);
+    const row = document.createElement('div');
+    row.className = 'timeline-row';
+
+    const track = document.createElement('div');
+    track.className = 'track';
+    const node = document.createElement('div');
+    node.className = 'node ' + auto + (slot.done && slot.bled ? ' bled-flag' : '');
+    node.textContent = slot.done ? '\u2713' : slot.bled ? '\u2715' : '';
+    attachTapHandlers(node, key, slot.id);
+    track.appendChild(node);
+    if (i < slots.length - 1) {
+      const line = document.createElement('div');
+      line.className = 'line';
+      track.appendChild(line);
+    }
+    row.appendChild(track);
+
+    const card = document.createElement('div');
+    card.className = 'slot-card ' + auto;
+
+    const timeWrap = document.createElement('div');
+    timeWrap.className = 'time-inputs';
+    const startInput = document.createElement('input');
+    startInput.type = 'time';
+    startInput.value = slot.start;
+    startInput.onchange = e => updateSlot(key, slot.id, 'start', e.target.value);
+    const dash = document.createElement('span');
+    dash.className = 'dash';
+    dash.textContent = '–';
+    const endInput = document.createElement('input');
+    endInput.type = 'time';
+    endInput.value = slot.end;
+    endInput.onchange = e => updateSlot(key, slot.id, 'end', e.target.value);
+    timeWrap.append(startInput, dash, endInput);
+
+    const labelInput = buildLabelControl(key, slot);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del-btn';
+    delBtn.setAttribute('aria-label', 'Delete slot');
+    delBtn.textContent = '\u2715';
+    delBtn.onclick = () => removeSlot(key, slot.id);
+
+    const topRow = document.createElement('div');
+    topRow.className = 'card-top';
+    topRow.append(timeWrap, labelInput, delBtn);
+
+    card.append(topRow, buildFocusArea(key, slot, now));
+    row.appendChild(card);
+    container.appendChild(row);
+  });
+}
+
+const CUSTOM_VALUE = '__custom__';
+const customEditing = {};   // { [slotId]: true } — transient, while typing a custom label
+
+// every label the tracker knows about: the fixed list first, then any custom
+// ones already typed on some slot, so a custom label stays reusable from the dropdown
+function allLabels() {
+  const set = new Set(LABEL_OPTIONS);
+  Object.keys(data).forEach(k => {
+    (data[k] || []).forEach(s => { if (s.label) set.add(s.label); });
+  });
+  return Array.from(set);
+}
+
+function buildLabelControl(key, slot) {
+  if (customEditing[slot.id]) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'label-input label-custom';
+    input.placeholder = 'Type label';
+    input.value = LABEL_OPTIONS.indexOf(slot.label) === -1 ? (slot.label || '') : '';
+    let committed = false;
+    const commit = () => {
+      if (committed) return;
+      committed = true;
+      delete customEditing[slot.id];
+      updateSlot(key, slot.id, 'label', input.value.trim());
+    };
+    input.onblur = commit;
+    input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } };
+    setTimeout(() => input.focus(), 0);
+    return input;
+  }
+
+  const sel = document.createElement('select');
+  sel.className = 'label-input';
+  const blankOpt = document.createElement('option');
+  blankOpt.value = '';
+  blankOpt.textContent = 'Label';
+  blankOpt.disabled = true;
+  sel.appendChild(blankOpt);
+  allLabels().forEach(opt => {
+    const o = document.createElement('option');
+    o.value = opt;
+    o.textContent = opt;
+    sel.appendChild(o);
+  });
+  const customOpt = document.createElement('option');
+  customOpt.value = CUSTOM_VALUE;
+  customOpt.textContent = '+ Custom\u2026';
+  sel.appendChild(customOpt);
+
+  sel.value = slot.label || '';
+  sel.onchange = e => {
+    if (e.target.value === CUSTOM_VALUE) {
+      customEditing[slot.id] = true;
+      renderSlotList(key, document.getElementById('slot-list'));
+      return;
+    }
+    updateSlot(key, slot.id, 'label', e.target.value);
+  };
+  return sel;
+}
+
+function buildFocusArea(key, slot, now) {
+  const idKey = String(slot.id);
+  const container = document.createElement('div');
+  container.className = 'focus-area';
+  container.id = 'focus-area-' + idKey;
+  const timer = focusTimers[idKey];
+
+  if (timer) {
+    const wrap = document.createElement('div');
+    wrap.className = 'focus-controls';
+    const end = combineDateTime(key, slot.end).getTime();
+    const cd = document.createElement('span');
+    cd.className = 'focus-countdown';
+    cd.textContent = fmtCountdown(Math.max(end - now.getTime(), 0));
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'reset-btn';
+    resetBtn.textContent = 'Reset';
+    resetBtn.onclick = () => resetFocus(key, slot.id);
+    const stopBtn = document.createElement('button');
+    stopBtn.className = 'stop-btn';
+    stopBtn.textContent = 'Stop';
+    stopBtn.onclick = () => stopFocus(key, slot.id);
+    wrap.append(cd, resetBtn, stopBtn);
+    container.appendChild(wrap);
+  } else {
+    const btn = document.createElement('button');
+    btn.className = 'focus-btn';
+    const status = timeStatus(slot, key, now);
+    btn.disabled = status === 'past';
+    btn.textContent = status === 'upcoming' ? 'Start now' : 'Focus mode';
+    btn.onclick = () => startFocus(key, slot.id);
+    container.appendChild(btn);
+  }
+
+  // per-slot breakup — rebuilt along with the focus area every second, so it
+  // stays live while a session is running
+  const stats = document.createElement('div');
+  stats.className = 'slot-stats';
+  const focusEl = document.createElement('span');
+  focusEl.className = 'slot-stat focus';
+  focusEl.innerHTML = 'Focus <b>' + fmtHours2(slotFocusSec(slot, key, now) / 3600) + '</b>';
+  const bledEl = document.createElement('span');
+  bledEl.className = 'slot-stat bled';
+  bledEl.innerHTML = 'Bled <b>' + fmtHours2(slotBledOf(slot, key, now) / 3600) + '</b>';
+  stats.append(focusEl, bledEl);
+  container.appendChild(stats);
+
+  return container;
+}
+
+function startFocus(key, id) {
+  const slot = (data[key] || []).find(s => s.id === id);
+  if (!slot) return;
+  const now = new Date();
+  const status = timeStatus(slot, key, now);
+  if (status === 'past') {
+    alert('This slot has already ended — focus mode can\u2019t start.');
+    return;
+  }
+  if (status === 'upcoming') {
+    // pull the slot's start time forward to right now, so tapping "Start now"
+    // on a not-yet-started slot begins it immediately instead of waiting
+    slot.start = pad(now.getHours()) + ':' + pad(now.getMinutes());
+    save();
+  }
+  focusTimers[String(id)] = { key, startedAt: Date.now() };
+  // always rebuild the whole row (not just the focus controls) so the visible
+  // start time is guaranteed to match the data, never left showing a stale value
+  renderSlotList(key, document.getElementById('slot-list'));
+  refreshStats(key);
+}
+
+function stopFocus(key, id) {
+  const slot = (data[key] || []).find(s => s.id === id);
+  const idKey = String(id);
+  const timer = focusTimers[idKey];
+  if (!slot || !timer) return;
+  const end = combineDateTime(key, slot.end).getTime();
+  const cappedNow = Math.min(Date.now(), end);
+  const elapsedSec = Math.max(0, (cappedNow - timer.startedAt) / 1000);
+  slot.focusSeconds = (slot.focusSeconds || 0) + elapsedSec;
+  delete focusTimers[idKey];
+  save();
+  refreshFocusArea(key, slot, new Date());
+  refreshStats(key);
+}
+
+function resetFocus(key, id) {
+  const slot = (data[key] || []).find(s => s.id === id);
+  delete focusTimers[String(id)];
+  if (slot) refreshFocusArea(key, slot, new Date());
+  refreshStats(key);
+}
+
+function refreshFocusArea(key, slot, now) {
+  const el = document.getElementById('focus-area-' + slot.id);
+  if (!el) return;
+  el.replaceWith(buildFocusArea(key, slot, now));
+}
+
+// runs every second regardless of which view is open, so a running focus
+// session still finalizes correctly even if you've navigated back to the calendar
+function tickFocus() {
+  const now = new Date();
+  const nowMs = now.getTime();
+
+  Object.keys(focusTimers).forEach(idKey => {
+    const t = focusTimers[idKey];
+    const slot = (data[t.key] || []).find(s => String(s.id) === idKey);
+    if (!slot) { delete focusTimers[idKey]; return; }
+    const end = combineDateTime(t.key, slot.end).getTime();
+    if (nowMs >= end) {
+      // slot's scheduled time is over — finalize the session as if Stop was pressed
+      const elapsedSec = Math.max(0, (end - t.startedAt) / 1000);
+      slot.focusSeconds = (slot.focusSeconds || 0) + elapsedSec;
+      delete focusTimers[idKey];
+      save();
+    }
+  });
+
+  if (view === 'day' && activeDate) {
+    const key = activeDate;
+    (data[key] || []).forEach(slot => refreshFocusArea(key, slot, now));
+    refreshStats(key);
+  }
+}
+
+function updateSlot(key, id, field, value, skipRebuild) {
+  const slot = (data[key] || []).find(s => s.id === id);
+  if (!slot) return;
+  slot[field] = value;
+  save();
+  if (!skipRebuild) renderSlotList(key, document.getElementById('slot-list'));
+  if (field === 'label') refreshLabelSummary(key);
+}
+
+function attachTapHandlers(node, key, id) {
+  let tapTimer = null;
+  node.addEventListener('click', () => {
+    if (tapTimer) {
+      clearTimeout(tapTimer);
+      tapTimer = null;
+      toggleBled(key, id);
+    } else {
+      tapTimer = setTimeout(() => {
+        tapTimer = null;
+        toggleDone(key, id);
+      }, 280);
+    }
+  });
+}
+
+function refreshStats(key) {
+  const hv = document.getElementById('day-hours-val');
+  if (hv) hv.textContent = fmtHours(dayHours(key));
+  const fv = document.getElementById('day-focus-val');
+  if (fv) fv.textContent = fmtHours(dayFocusHours(key));
+  const bv = document.getElementById('day-bled-val');
+  if (bv) bv.textContent = fmtHours(bledHours(key));
+  const brv = document.getElementById('day-break-val');
+  if (brv) brv.textContent = fmtHours(breakHours(key));
+  refreshLabelSummary(key);
+}
+
+// single tap = completion mark. Fully independent of bled and of focus time:
+// it only tracks how many sessions were completed.
+function toggleDone(key, id) {
+  const slot = (data[key] || []).find(s => s.id === id);
+  if (!slot) return;
+  setFlag(key, id, 'done', !slot.done);
+  renderSlotList(key, document.getElementById('slot-list'));
+  refreshStats(key);
+}
+
+// double tap = bled mark, equally independent of the completion mark
+function toggleBled(key, id) {
+  const slot = (data[key] || []).find(s => s.id === id);
+  if (!slot) return;
+  setFlag(key, id, 'bled', !slot.bled);
+  renderSlotList(key, document.getElementById('slot-list'));
+  refreshStats(key);
+}
+
+function addSlot(key) {
+  if (!data[key]) data[key] = [];
+  const existing = data[key].slice().sort((a, b) => (a.start < b.start ? -1 : 1));
+  const last = existing[existing.length - 1];
+  const start = last ? last.end : '09:00';
+  const [h, m] = start.split(':').map(Number);
+  const eh = Math.min(h + 1, 23);
+  const end = pad(eh) + ':' + pad(m);
+  data[key].push({ id: Date.now(), start, end, label: '', done: false, bled: false, focusSeconds: 0 });
+  save();
+  renderSlotList(key, document.getElementById('slot-list'));
+}
+
+function removeSlot(key, id) {
+  data[key] = (data[key] || []).filter(s => s.id !== id);
+  save();
+  renderSlotList(key, document.getElementById('slot-list'));
+  refreshStats(key);
+}
+
+// ---- live tick: updates clock, remaining time, current-slot banner, and node status
+// without rebuilding inputs, so typing/focus is preserved ----
+function tick() {
+  if (view !== 'day' || !activeDate) return;
+  const now = new Date();
+  const key = activeDate;
+
+  const clockEl = document.getElementById('clock');
+  if (clockEl) clockEl.textContent = fmtClock(now);
+
+  const slots = (data[key] || []).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
+  const totalRemaining = slots.reduce((sum, s) => sum + remainingOf(s, key, now), 0);
+  const remEl = document.getElementById('remaining');
+  if (remEl) remEl.textContent = fmtDuration(totalRemaining);
+
+  const current = slots.find(s => timeStatus(s, key, now) === 'current');
+  const upcoming = slots.find(s => timeStatus(s, key, now) === 'upcoming');
+  const banner = document.getElementById('banner');
+  if (banner) {
+    banner.innerHTML = '';
+    if (current) {
+      banner.className = 'banner';
+      const dot = document.createElement('div');
+      dot.className = 'dot';
+      const mid = document.createElement('div');
+      mid.style.flex = '1';
+      const lbl = document.createElement('div');
+      lbl.className = 'banner-label';
+      lbl.textContent = current.label || 'Current slot';
+      const sub = document.createElement('div');
+      sub.className = 'banner-sub';
+      sub.textContent = current.start + '–' + current.end;
+      mid.append(lbl, sub);
+      const cd = document.createElement('div');
+      cd.className = 'countdown';
+      cd.textContent = fmtCountdown(remainingOf(current, key, now));
+      banner.append(dot, mid, cd);
+    } else if (upcoming) {
+      banner.className = 'banner gap';
+      banner.textContent = 'No active slot · next "' + (upcoming.label || 'slot') + '" at ' + upcoming.start;
+    } else if (slots.length) {
+      banner.className = 'banner gap';
+      banner.textContent = 'This day\u2019s scheduled slots have passed';
+    } else {
+      banner.className = 'banner gap';
+      banner.textContent = 'No slots scheduled';
+    }
+  }
+
+  // update node/card status classes in place (skip if a slot's manually marked)
+  const rows = document.querySelectorAll('#slot-list .timeline-row');
+  rows.forEach((row, i) => {
+    const slot = slots[i];
+    if (!slot) return;
+    const auto = slot.done ? 'manual' : slot.bled ? 'bled' : timeStatus(slot, key, now);
+    const node = row.querySelector('.node');
+    const card = row.querySelector('.slot-card');
+    if (node) {
+      node.className = 'node ' + auto + (slot.done && slot.bled ? ' bled-flag' : '');
+      node.textContent = slot.done ? '\u2713' : slot.bled ? '\u2715' : '';
+    }
+    if (card) card.className = 'slot-card ' + auto;
+    // safety net: keep the displayed start/end in sync with the data
+    // (e.g. after a "Start now" shift) unless the person has that field open
+    const timeInputs = row.querySelectorAll('input[type="time"]');
+    const startEl = timeInputs[0], endEl = timeInputs[1];
+    if (startEl && document.activeElement !== startEl && startEl.value !== slot.start) startEl.value = slot.start;
+    if (endEl && document.activeElement !== endEl && endEl.value !== slot.end) endEl.value = slot.end;
+  });
+}
+
+/* =====================================================================
+   Supabase sync
+   ---------------------------------------------------------------------
+   Model: localStorage is the working copy; `snapshot` records what we
+   believe the server currently holds for each day. Comparing the two
+   tells us exactly which days changed locally, with no dirty-tracking
+   sprinkled through the UI code.
+
+   A day is only ever overwritten wholesale when we have no local edit
+   pending for it. When both sides changed, the two slot lists are merged
+   rather than one replacing the other, so a logged session can't be
+   destroyed by the other device.
+   ===================================================================== */
+
+const SNAPSHOT_KEY = 'schedule-calendar-snapshot';
+let sb = null;              // supabase client
+let session = null;         // current auth session
+let snapshot = {};          // { day: JSON string the server is believed to hold }
+let pulled = false;         // never push before a first successful pull
+let flushTimer = null;
+let retryTimer = null;
+let offlineOnly = false;    // user chose "this device only"
+
+function cfgOk() {
+  const c = window.APP_CONFIG || {};
+  return !!(c.SUPABASE_URL && c.SUPABASE_ANON_KEY &&
+            c.SUPABASE_URL.indexOf('YOUR-') === -1 &&
+            c.SUPABASE_ANON_KEY.indexOf('YOUR-') === -1);
+}
+
+function setSync(state, text) {
+  const pill = document.getElementById('sync-pill');
+  if (!pill) return;
+  pill.hidden = false;
+  pill.className = 'sync-pill ' + state;
+  document.getElementById('sync-text').textContent = text;
+}
+
+// ---- merge: union by slot id, never losing logged time or a mark ----
+function mergeSlots(local, remote) {
+  const out = {};
+  (remote || []).forEach(r => { out[r.id] = Object.assign({}, r); });
+  (local || []).forEach(l => {
+    const r = out[l.id];
+    if (!r) { out[l.id] = Object.assign({}, l); return; }
+    // whichever side logged more focus time is treated as the fresher edit
+    // for the descriptive fields; the numeric and boolean fields take the
+    // safer union so nothing recorded on either device disappears
+    const base = (l.focusSeconds || 0) >= (r.focusSeconds || 0) ? l : r;
+    out[l.id] = Object.assign({}, base, {
+      focusSeconds: Math.max(l.focusSeconds || 0, r.focusSeconds || 0),
+      done: !!(l.done || r.done),
+      bled: !!(l.bled || r.bled),
+    });
+  });
+  return Object.keys(out).map(k => out[k]).sort((a, b) => (a.start < b.start ? -1 : 1));
+}
+
+function normalizeSlots(slots) {
+  const wrap = normalize({ d: Array.isArray(slots) ? slots : [] });
+  return wrap.d;
+}
+
+async function pull() {
+  if (!sb || !session) return;
+  setSync('syncing', 'syncing');
+  const res = await sb.from('study_days').select('day, slots');
+  if (res.error) { setSync('offline', 'offline'); return; }
+
+  let changed = false;
+  (res.data || []).forEach(row => {
+    const remoteSlots = normalizeSlots(row.slots);
+    const remoteStr = JSON.stringify(remoteSlots);
+    const localStr = data[row.day] ? JSON.stringify(data[row.day]) : null;
+
+    if (localStr === null) {                    // day only exists on the server
+      data[row.day] = remoteSlots; snapshot[row.day] = remoteStr; changed = true;
+    } else if (localStr === remoteStr) {        // already in agreement
+      snapshot[row.day] = remoteStr;
+    } else if (localStr === snapshot[row.day]) { // no local edit pending -> take server
+      data[row.day] = remoteSlots; snapshot[row.day] = remoteStr; changed = true;
+    } else if (remoteStr === snapshot[row.day]) { // only we changed -> keep local, flush pushes it
+      /* keep local */
+    } else {                                     // both sides changed -> merge
+      data[row.day] = mergeSlots(data[row.day], remoteSlots); changed = true;
+    }
+  });
+
+  pulled = true;
+  if (changed) { store.set(STORAGE_KEY, JSON.stringify(data)); renderApp(); }
+  store.set(SNAPSHOT_KEY, JSON.stringify(snapshot));
+  await flush();
+}
+
+async function flush() {
+  if (!sb || !session || !pulled) return;
+  const changed = Object.keys(data).filter(k => JSON.stringify(data[k]) !== snapshot[k]);
+  if (!changed.length) { setSync('synced', 'synced'); return; }
+
+  setSync('syncing', 'saving');
+  const rows = changed.map(k => ({ user_id: session.user.id, day: k, slots: data[k] }));
+  const res = await sb.from('study_days').upsert(rows, { onConflict: 'user_id,day' });
+  if (res.error) {
+    // nothing is lost: localStorage already holds it, and we retry
+    setSync('offline', 'offline');
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(flush, 20000);
+    return;
+  }
+  changed.forEach(k => { snapshot[k] = JSON.stringify(data[k]); });
+  store.set(SNAPSHOT_KEY, JSON.stringify(snapshot));
+  setSync('synced', 'synced');
+}
+
+function scheduleFlush() {
+  if (!sb || !session) return;
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(flush, 2000);   // debounce: one write per burst of edits
+}
+
+// ---- auth ----
+function showAuth(show) { document.getElementById('auth-overlay').hidden = !show; }
+
+async function signIn(email, password) {
+  const res = await sb.auth.signInWithPassword({ email: email, password: password });
+  if (res.error) throw res.error;
+  session = res.data.session;
+  await afterSignIn();
+}
+
+async function afterSignIn() {
+  showAuth(false);
+  setSync('syncing', 'syncing');
+  await pull();
+}
+
+async function signOut() {
+  clearTimeout(flushTimer); clearTimeout(retryTimer);
+  await flush();
+  await sb.auth.signOut();
+  session = null; pulled = false; snapshot = {};
+  store.set(SNAPSHOT_KEY, '{}');
+  setSync('', 'signed out');
+  showAuth(true);
+}
+
+function wireAuthUI() {
+  const form = document.getElementById('auth-form');
+  const btn = document.getElementById('auth-btn');
+  const err = document.getElementById('auth-err');
+
+  form.onsubmit = async e => {
+    e.preventDefault();
+    err.textContent = '';
+    btn.disabled = true; btn.textContent = 'Signing in\u2026';
+    try {
+      await signIn(document.getElementById('auth-email').value.trim(),
+                   document.getElementById('auth-pass').value);
+    } catch (ex) {
+      err.textContent = (ex && ex.message) || 'Could not sign in.';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Sign in';
+    }
+  };
+
+  document.getElementById('auth-offline').onclick = () => {
+    offlineOnly = true;
+    showAuth(false);
+    setSync('offline', 'this device only');
+  };
+
+  const pill = document.getElementById('sync-pill');
+  const menu = document.getElementById('sync-menu');
+  pill.onclick = () => {
+    if (!session) { showAuth(true); return; }
+    menu.hidden = !menu.hidden;
+  };
+  document.getElementById('menu-sync').onclick = () => { menu.hidden = true; pull(); };
+  document.getElementById('menu-signout').onclick = () => { menu.hidden = true; signOut(); };
+  document.addEventListener('click', e => {
+    if (!menu.hidden && !menu.contains(e.target) && e.target !== pill && !pill.contains(e.target)) menu.hidden = true;
+  });
+}
+
+async function initSync() {
+  wireAuthUI();
+
+  if (!cfgOk()) {
+    setSync('offline', 'local only \u2014 not configured');
+    return;
+  }
+  if (typeof window.supabase === 'undefined') {
+    // CDN blocked or offline: the app still works entirely on this device
+    setSync('offline', 'offline');
+    return;
+  }
+
+  sb = window.supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+  });
+
+  try { snapshot = JSON.parse(store.get(SNAPSHOT_KEY) || '{}'); } catch (e) { snapshot = {}; }
+
+  const res = await sb.auth.getSession();
+  session = res.data.session;
+  if (session) { await afterSignIn(); } else { showAuth(true); }
+
+  // pick up the other device's changes when returning to the app, and slowly
+  // while it sits open
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && session) pull();
+  });
+  setInterval(() => { if (session && !document.hidden) pull(); }, 60000);
+  window.addEventListener('online', () => { if (session) pull(); });
+  // last-ditch flush when the tab is backgrounded or closed
+  window.addEventListener('pagehide', () => { if (session && pulled) flush(); });
+}
+
+(async function init() {
+  data = load();
+  renderApp();
+  await initSync();
+})();
+setInterval(() => { tickFocus(); tick(); }, 1000);
+</script>
+</body>
+</html>
