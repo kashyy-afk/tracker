@@ -16,7 +16,17 @@ user can only ever touch their own rows.
 
 ---
 
-## Setup
+## ⭐ Setting this up for the first time?
+
+**Read [SETUP.md](SETUP.md).** It walks through every click, start to finish,
+assuming no prior experience with GitHub, Vercel, or Supabase. About 20
+minutes, entirely in the browser, nothing to install.
+
+The section below is the same process in condensed form, for reference.
+
+---
+
+## Setup (condensed)
 
 Roughly 15 minutes, all free tier. Do the steps in order — Vercel needs values
 that Supabase gives you.
@@ -155,6 +165,7 @@ personal study tracker plainly is.
 
 | Path                  | What it is                                              |
 | --------------------- | ------------------------------------------------------- |
+| `SETUP.md`            | Step-by-step first-time setup guide                      |
 | `index.html`          | The whole app — markup, styles, logic, sync layer        |
 | `config.js`           | Your two Supabase values                                 |
 | `supabase/schema.sql` | Tables, RLS policies, keep-alive table. Run once.        |
