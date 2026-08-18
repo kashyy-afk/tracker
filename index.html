@@ -21,7 +21,7 @@
     background: #0B0D10;
     color: #E7E9EC;
     font-family: 'Inter', system-ui, sans-serif;
-    padding: 18px 14px 40px;
+    padding: 18px 14px 76px;
     min-height: 100vh;
   }
   .container { max-width: 480px; margin: 0 auto; }
@@ -117,7 +117,8 @@
   input[type="time"] { background: #0B0D10; border: 1px solid #262B33; border-radius: 6px; color: #E7E9EC; font-family: 'IBM Plex Mono', monospace; font-size: 13px; padding: 5px 4px; width: 84px; }
   input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.6); }
   .dash { color: #8B93A1; font-size: 12px; }
-  .label-input { flex: 1; min-width: 0; width: 100%; background: transparent; border: none; color: #E7E9EC; font-size: 14px; padding: 6px 2px; font-family: inherit; cursor: pointer; }
+  .label-input { flex: 1; min-width: 0; width: 100%; background: transparent; border: none; color: #E7E9EC; font-size: 14px; padding: 6px 18px 6px 2px; font-family: inherit; cursor: pointer;
+    text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
   select.label-input option { background: #15181D; color: #E7E9EC; }
   .slot-card.manual .label-input { color: #8B93A1; text-decoration: line-through; }
   .slot-card.bled .label-input { color: #E5A0A3; text-decoration: line-through; }
@@ -162,6 +163,8 @@
     background: #15181D; border: 1px solid #262B33; border-radius: 20px; padding: 6px 11px;
     font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8B93A1; cursor: pointer; }
   .sync-pill[hidden] { display: none; }
+  .sync-pill.synced { opacity: .5; }
+  .sync-pill:hover, .sync-pill:focus-visible, .sync-pill:active { opacity: 1; }
   .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #5A616D; flex-shrink: 0; }
   .sync-pill.synced .sync-dot { background: #3FA66B; }
   .sync-pill.syncing .sync-dot { background: #F5C147; animation: pulse 1.4s ease-in-out infinite; }
@@ -809,6 +812,7 @@ function buildLabelControl(key, slot) {
     input.type = 'text';
     input.className = 'label-input label-custom';
     input.placeholder = 'Type label';
+    input.maxLength = 24;
     input.value = LABEL_OPTIONS.indexOf(slot.label) === -1 ? (slot.label || '') : '';
     let committed = false;
     const commit = () => {
@@ -842,6 +846,7 @@ function buildLabelControl(key, slot) {
   sel.appendChild(customOpt);
 
   sel.value = slot.label || '';
+  sel.title = slot.label || '';
   sel.onchange = e => {
     if (e.target.value === CUSTOM_VALUE) {
       customEditing[slot.id] = true;
