@@ -209,7 +209,8 @@ const today = new Date();
 let calYear = today.getFullYear();
 let calMonth = today.getMonth(); // 0-indexed
 let activeDate = null;           // "YYYY-MM-DD" for day view
-const focusTimers = {};          // { [slotId]: { key, startedAt } } — in-memory, resets on reload
+const focusTimers = {};          // { [slotId]: { key, startedAt } }, mirrored into FOCUS_KEY
+const FOCUS_KEY = 'schedule-calendar-focus';
 
 // Local storage is the primary write target: it is instant, works offline, and
 // means the app is never blank. Supabase is the durable, cross-device copy.
@@ -228,6 +229,91 @@ function load() {
 function save() {
   store.set(STORAGE_KEY, JSON.stringify(data));
   scheduleFlush();
+}
+
+/* ---------------------------------------------------------------------
+   Running focus sessions.
+
+   A session used to live only in memory, so locking the phone — which
+   lets iOS discard the page — lost both the session and every second
+   logged since Start. Two independent safeguards now prevent that:
+
+     1. checkpointFocus() banks elapsed time into slot.focusSeconds
+        whenever the page is hidden, so a discarded page loses nothing.
+     2. focusTimers is mirrored to localStorage, so a reload resumes the
+        session instead of silently dropping it.
+
+   The timer map is kept OUT of `data` on purpose: a running session
+   belongs to one device, and syncing it would make the tablet believe
+   the phone's session was its own. Only the banked seconds sync.
+   --------------------------------------------------------------------- */
+
+function saveFocusTimers() {
+  store.set(FOCUS_KEY, JSON.stringify(focusTimers));
+}
+
+// Fold a running timer's elapsed time into the slot and stop tracking it.
+// Capped at the slot's scheduled end, so a session left running overnight
+// never counts past the slot it belongs to.
+function finalizeTimer(idKey, upto) {
+  const t = focusTimers[idKey];
+  if (!t) return;
+  const slot = (data[t.key] || []).find(x => String(x.id) === idKey);
+  if (slot) {
+    const end = combineDateTime(t.key, slot.end).getTime();
+    const cappedNow = Math.min(upto === undefined ? Date.now() : upto, end);
+    slot.focusSeconds = (slot.focusSeconds || 0) + Math.max(0, (cappedNow - t.startedAt) / 1000);
+  }
+  delete focusTimers[idKey];
+}
+
+// Bank what has accrued so far without ending the session: the elapsed time
+// moves into focusSeconds and the clock restarts from now. Banking and
+// resetting together is what stops a second checkpoint double-counting.
+function checkpointFocus() {
+  const ids = Object.keys(focusTimers);
+  if (!ids.length) return;
+  const nowMs = Date.now();
+  let touched = false;
+  ids.forEach(idKey => {
+    const t = focusTimers[idKey];
+    const slot = (data[t.key] || []).find(x => String(x.id) === idKey);
+    if (!slot) { delete focusTimers[idKey]; touched = true; return; }
+    const end = combineDateTime(t.key, slot.end).getTime();
+    const cappedNow = Math.min(nowMs, end);
+    const gained = Math.max(0, (cappedNow - t.startedAt) / 1000);
+    if (gained > 0) { slot.focusSeconds = (slot.focusSeconds || 0) + gained; touched = true; }
+    if (nowMs >= end) { delete focusTimers[idKey]; touched = true; }
+    else { t.startedAt = nowMs; }
+  });
+  saveFocusTimers();
+  if (touched) save();
+}
+
+// Bring back sessions that were running when the page went away. Runs before
+// the first render so a live slot never flashes as idle first.
+function restoreFocusTimers() {
+  let stored = {};
+  try { stored = JSON.parse(store.get(FOCUS_KEY) || '{}') || {}; } catch (e) { stored = {}; }
+  const nowMs = Date.now();
+  let banked = false;
+
+  Object.keys(stored).forEach(idKey => {
+    const t = stored[idKey];
+    if (!t || !t.key || typeof t.startedAt !== 'number') return;
+    const slot = (data[t.key] || []).find(x => String(x.id) === idKey);
+    if (!slot) return;                       // slot deleted while we were away
+
+    focusTimers[idKey] = { key: t.key, startedAt: t.startedAt };
+    const end = combineDateTime(t.key, slot.end).getTime();
+    if (nowMs >= end) {                      // slot finished while away — close it out
+      finalizeTimer(idKey, nowMs);
+      banked = true;
+    }
+  });
+
+  saveFocusTimers();
+  if (banked) save();
 }
 
 // `done` and `bled` are independent flags. Older data stored them as a single
@@ -924,6 +1010,7 @@ function startFocus(key, id) {
     save();
   }
   focusTimers[String(id)] = { key, startedAt: Date.now() };
+  saveFocusTimers();
   // always rebuild the whole row (not just the focus controls) so the visible
   // start time is guaranteed to match the data, never left showing a stale value
   renderSlotList(key, document.getElementById('slot-list'));
@@ -935,11 +1022,8 @@ function stopFocus(key, id) {
   const idKey = String(id);
   const timer = focusTimers[idKey];
   if (!slot || !timer) return;
-  const end = combineDateTime(key, slot.end).getTime();
-  const cappedNow = Math.min(Date.now(), end);
-  const elapsedSec = Math.max(0, (cappedNow - timer.startedAt) / 1000);
-  slot.focusSeconds = (slot.focusSeconds || 0) + elapsedSec;
-  delete focusTimers[idKey];
+  finalizeTimer(idKey);
+  saveFocusTimers();
   save();
   refreshFocusArea(key, slot, new Date());
   refreshStats(key);
@@ -947,7 +1031,8 @@ function stopFocus(key, id) {
 
 function resetFocus(key, id) {
   const slot = (data[key] || []).find(s => s.id === id);
-  delete focusTimers[String(id)];
+  delete focusTimers[String(id)];   // Reset discards the session's time by design
+  saveFocusTimers();
   if (slot) refreshFocusArea(key, slot, new Date());
   refreshStats(key);
 }
@@ -967,13 +1052,12 @@ function tickFocus() {
   Object.keys(focusTimers).forEach(idKey => {
     const t = focusTimers[idKey];
     const slot = (data[t.key] || []).find(s => String(s.id) === idKey);
-    if (!slot) { delete focusTimers[idKey]; return; }
+    if (!slot) { delete focusTimers[idKey]; saveFocusTimers(); return; }
     const end = combineDateTime(t.key, slot.end).getTime();
     if (nowMs >= end) {
       // slot's scheduled time is over — finalize the session as if Stop was pressed
-      const elapsedSec = Math.max(0, (end - t.startedAt) / 1000);
-      slot.focusSeconds = (slot.focusSeconds || 0) + elapsedSec;
-      delete focusTimers[idKey];
+      finalizeTimer(idKey, nowMs);
+      saveFocusTimers();
       save();
     }
   });
@@ -1352,7 +1436,20 @@ async function initSync() {
 
 (async function init() {
   data = load();
+  restoreFocusTimers();   // before the first render, so a live slot paints as live
   renderApp();
+
+  // Bank running time whenever the page goes away. Registered here rather than
+  // in initSync(), which returns early when Supabase isn't configured — these
+  // must attach even in local-only mode.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) checkpointFocus();
+    else { tickFocus(); tick(); }   // snap the frozen countdown back immediately
+  });
+  window.addEventListener('pagehide', checkpointFocus);
+  document.addEventListener('freeze', checkpointFocus);          // Chrome discard
+  window.addEventListener('pageshow', () => { tickFocus(); tick(); });  // bfcache
+
   await initSync();
 })();
 setInterval(() => { tickFocus(); tick(); }, 1000);
