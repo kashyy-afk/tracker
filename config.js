@@ -11,6 +11,6 @@
 // Until these are filled in, the app still runs and stores data on the device.
 
 window.APP_CONFIG = {
-  SUPABASE_URL: 'YOUR-PROJECT-URL',
-  SUPABASE_ANON_KEY: 'YOUR-ANON-KEY',
+  SUPABASE_URL: 'https://jpprfoqygxhcbvjzufjn.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_uC4QnT9ANq0Nv6FwB7zEcQ_6J7GXhtZ',
 };
