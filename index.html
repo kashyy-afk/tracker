@@ -130,9 +130,31 @@
   .slot-stat.focus b { color: #6C8CFF; }
   .slot-stat.bled b { color: #E5484D; }
   .label-input.label-custom { cursor: text; border-bottom: 1px solid #F5C147; }
-  .label-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .label-tab { background: #15181D; border: 1px solid #262B33; border-radius: 20px; padding: 6px 12px; font-size: 12.5px; font-family: 'IBM Plex Mono', monospace; color: #E7E9EC; }
-  .label-summary-empty { font-size: 12.5px; color: #5A616D; margin-bottom: 16px; }
+
+  /* ---- the two side-by-side summary boxes: focus-time breakup + ticked to-dos ---- */
+  .summary-boxes { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 16px; }
+  .summary-box { flex: 1; min-width: 0; background: #12151A; border: 1px solid #1C2027; border-radius: 12px; padding: 10px 11px; }
+  .summary-box .box-cap { font-size: 10px; letter-spacing: 0.08em; color: #5A616D; font-weight: 600; margin-bottom: 8px; }
+  .box-items { display: flex; flex-wrap: wrap; gap: 6px; }
+  .box-empty { font-size: 12px; color: #4A505A; }
+  .done-tab { max-width: 100%; background: #15181D; border: 1px solid #262B33; border-radius: 20px; padding: 6px 12px; font-size: 12.5px; color: #E7E9EC;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---- to-do list ---- */
+  .todo-section { margin-top: 22px; }
+  .todo-head { font-size: 11px; letter-spacing: 0.08em; color: #8B93A1; font-weight: 600; margin-bottom: 8px; }
+  .todo-add { display: flex; gap: 8px; margin-bottom: 10px; }
+  .todo-input { flex: 1; min-width: 0; background: #12151A; border: 1px solid #262B33; border-radius: 10px; color: #E7E9EC; font-family: inherit; font-size: 15px; padding: 11px 12px; }
+  .todo-input::placeholder { color: #4A505A; }
+  .todo-add-btn { flex-shrink: 0; width: 46px; background: #15181D; border: 1px solid #3A2E14; border-radius: 10px; color: #F5C147; font-size: 20px; cursor: pointer; }
+  .todo-add-btn:hover { background: #191510; }
+  .todo-item { display: flex; align-items: center; gap: 10px; background: #12151A; border: 1px solid #1C2027; border-radius: 10px; padding: 9px 10px; margin-bottom: 8px; }
+  .todo-check { flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px; border: 1px solid #3A3F48; background: transparent; color: #0B0D10; font-size: 14px; line-height: 1; cursor: pointer; }
+  .todo-check.done { background: #3FA66B; border-color: #3FA66B; }
+  .todo-text { flex: 1; min-width: 0; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .todo-item.done .todo-text { color: #5A616D; text-decoration: line-through; }
+  .todo-empty { font-size: 12.5px; color: #4A505A; padding: 2px 0 4px; }
   .del-btn { background: transparent; border: none; color: #5A616D; padding: 6px; cursor: pointer; flex-shrink: 0; font-size: 15px; }
   .del-btn:hover { color: #E7E9EC; }
 
@@ -322,6 +344,11 @@ function normalize(obj) {
   Object.keys(obj || {}).forEach(k => {
     if (!Array.isArray(obj[k])) return;
     obj[k].forEach(slot => {
+      if (slot.kind === 'todo') {          // to-do entries carry no time fields
+        slot.text = String(slot.text || '');
+        slot.done = !!slot.done;
+        return;
+      }
       if (slot.status !== undefined) {
         slot.done = slot.status === 'done' || slot.done === true;
         slot.bled = slot.status === 'bled';
@@ -335,16 +362,27 @@ function normalize(obj) {
   });
   return obj;
 }
+// Date.now() alone repeats when two entries are created inside the same
+// millisecond, and a duplicate id would make delete remove both rows.
+let lastId = 0;
+function nextId() { lastId = Math.max(Date.now(), lastId + 1); return lastId; }
 function pad(n) { return String(n).padStart(2, '0'); }
 function dateKey(y, m, d) { return `${y}-${pad(m + 1)}-${pad(d)}`; }
 function todayKey() { return dateKey(today.getFullYear(), today.getMonth(), today.getDate()); }
+
+/* A day's array holds two kinds of entry: time slots, and to-do items marked
+   with kind:'todo'. Keeping them in one array means the existing sync, merge
+   and storage paths carry to-dos for free, with no schema change. Everything
+   that reasons about time must go through daySlots(), never data[key]. */
+function daySlots(key) { return (data[key] || []).filter(s => s.kind !== 'todo'); }
+function dayTodos(key) { return (data[key] || []).filter(s => s.kind === 'todo'); }
 
 function minutesOf(t) {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
 }
 function dayHours(key) {
-  const slots = data[key] || [];
+  const slots = daySlots(key);
   const totalMin = slots.filter(s => s.done).reduce((sum, s) => {
     const diff = minutesOf(s.end) - minutesOf(s.start);
     return sum + Math.max(diff, 0);
@@ -352,7 +390,7 @@ function dayHours(key) {
   return totalMin / 60;
 }
 function bledHours(key) {
-  const slots = data[key] || [];
+  const slots = daySlots(key);
   const now = new Date();
   let totalSec = 0;
   // bled accrues for every slot regardless of its completion mark — marking a
@@ -361,20 +399,20 @@ function bledHours(key) {
   return totalSec / 3600;
 }
 function breakHours(key) {
-  const slots = (data[key] || []).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
+  const slots = daySlots(key).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
   if (slots.length < 2) return 0;
   const spanMin = minutesOf(slots[slots.length - 1].end) - minutesOf(slots[0].start);
   const scheduledMin = slots.reduce((sum, s) => sum + Math.max(minutesOf(s.end) - minutesOf(s.start), 0), 0);
   return Math.max(spanMin - scheduledMin, 0) / 60;
 }
 function dayFocusHours(key) {
-  const slots = data[key] || [];
+  const slots = daySlots(key);
   const now = new Date();
   const totalSec = slots.reduce((sum, s) => sum + slotFocusSec(s, key, now), 0);
   return totalSec / 3600;
 }
 function labelFocusHours(key, label) {
-  const slots = (data[key] || []).filter(s => (s.label || '') === label);
+  const slots = daySlots(key).filter(s => (s.label || '') === label);
   const now = new Date();
   const totalSec = slots.reduce((sum, s) => sum + slotFocusSec(s, key, now), 0);
   return totalSec / 3600;
@@ -473,11 +511,12 @@ const PRESET_SLOTS = [
 ];
 
 function applyPreset(key) {
-  if ((data[key] || []).length > 0) {
+  if (daySlots(key).length > 0) {
     const ok = confirm('This replaces the existing slots for this day. Continue?');
     if (!ok) return;
   }
-  data[key] = PRESET_SLOTS.map((s, i) => ({
+  // the day's to-dos are untouched: only the time slots are replaced
+  data[key] = dayTodos(key).concat(PRESET_SLOTS.map((s, i) => ({
     id: Date.now() + i,
     start: s.start,
     end: s.end,
@@ -485,7 +524,7 @@ function applyPreset(key) {
     done: false,
     bled: false,
     focusSeconds: 0,
-  }));
+  })));
   save();
   renderApp();
 }
@@ -752,7 +791,7 @@ function buildDayView(key) {
   banner.id = 'banner';
   wrap.appendChild(banner);
 
-  wrap.appendChild(buildLabelSummary(key));
+  wrap.appendChild(buildSummaryBoxes(key));
 
   const legend = document.createElement('div');
   legend.className = 'legend';
@@ -774,46 +813,199 @@ function buildDayView(key) {
   addBtn.onclick = () => { addSlot(key); };
   wrap.appendChild(addBtn);
 
+  wrap.appendChild(buildTodoSection(key));
+
   const footer = document.createElement('div');
   footer.className = 'footer';
-  footer.textContent = 'Tap a dot to mark complete, double-tap to mark bled · Tapping "Start now" on an upcoming slot pulls its start time to now and begins focus immediately · unclaimed elapsed time bleeds automatically';
+  footer.textContent = 'Tap a dot to mark complete, double-tap to mark bled · Tapping "Start now" on an upcoming slot pulls its start time to now and begins focus immediately · unclaimed elapsed time bleeds automatically \u00b7 To-dos are per day; ticking one lists it under TO-DO DONE';
   wrap.appendChild(footer);
 
   return wrap;
 }
 
-// ---- per-label focus-time summary tabs, e.g. "Audit · 2.26h" — day view only ----
-function buildLabelSummary(key) {
+// ---- the two summary boxes: per-label focus breakup, and ticked-off to-dos ----
+// day view only; rebuilt wholesale on every stats refresh, so both stay live
+function buildSummaryBoxes(key) {
   const wrap = document.createElement('div');
-  wrap.id = 'label-summary';
-  const used = new Set((data[key] || []).map(s => s.label).filter(Boolean));
+  wrap.id = 'summary-boxes';
+  wrap.className = 'summary-boxes';
+  wrap.append(buildFocusBox(key), buildDoneBox(key));
+  return wrap;
+}
+
+function buildBox(caption) {
+  const box = document.createElement('div');
+  box.className = 'summary-box';
+  const cap = document.createElement('div');
+  cap.className = 'box-cap';
+  cap.textContent = caption;
+  const items = document.createElement('div');
+  items.className = 'box-items';
+  box.append(cap, items);
+  return { box, items };
+}
+
+// per-label focus-time tabs, e.g. "Audit · 2.26h"
+function buildFocusBox(key) {
+  const parts = buildBox('FOCUS TIME');
+  const used = new Set(daySlots(key).map(s => s.label).filter(Boolean));
   const totals = allLabels()
     .filter(label => used.has(label))
     .map(label => ({ label, hours: labelFocusHours(key, label) }))
     .filter(t => t.hours > 0);
   if (totals.length === 0) {
-    wrap.className = 'label-summary-empty';
-    wrap.textContent = 'No focus time logged yet';
-    return wrap;
+    const empty = document.createElement('div');
+    empty.className = 'box-empty';
+    empty.textContent = 'No focus time logged yet';
+    parts.items.appendChild(empty);
+    return parts.box;
   }
-  wrap.className = 'label-summary';
   totals.forEach(t => {
     const tab = document.createElement('div');
     tab.className = 'label-tab';
     tab.textContent = t.label + ' \u00b7 ' + fmtHours2(t.hours);
-    wrap.appendChild(tab);
+    parts.items.appendChild(tab);
   });
+  return parts.box;
+}
+
+// one tab per to-do already ticked off on this day
+function buildDoneBox(key) {
+  const parts = buildBox('TO-DO DONE');
+  const done = dayTodos(key).filter(t => t.done);
+  if (done.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'box-empty';
+    empty.textContent = 'Nothing ticked yet';
+    parts.items.appendChild(empty);
+    return parts.box;
+  }
+  done.forEach(t => {
+    const tab = document.createElement('div');
+    tab.className = 'done-tab';
+    tab.textContent = t.text;
+    tab.title = t.text;
+    parts.items.appendChild(tab);
+  });
+  return parts.box;
+}
+
+function refreshSummaryBoxes(key) {
+  const el = document.getElementById('summary-boxes');
+  if (!el) return;
+  el.replaceWith(buildSummaryBoxes(key));
+}
+
+/* ---------------------------------------------------------------------
+   To-do list. Items share the day's array with the time slots (tagged
+   kind:'todo'), so they sync, export and merge with no extra plumbing.
+   --------------------------------------------------------------------- */
+
+function buildTodoSection(key) {
+  const wrap = document.createElement('div');
+  wrap.className = 'todo-section';
+
+  const head = document.createElement('div');
+  head.className = 'todo-head';
+  head.textContent = 'TO-DO';
+
+  const addRow = document.createElement('div');
+  addRow.className = 'todo-add';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'todo-input';
+  input.placeholder = 'Add a to-do\u2026';
+  input.maxLength = 120;
+  const addBtn = document.createElement('button');
+  addBtn.className = 'todo-add-btn';
+  addBtn.setAttribute('aria-label', 'Add to-do');
+  addBtn.textContent = '+';
+  const submit = () => {
+    if (addTodo(key, input.value)) { input.value = ''; input.focus(); }
+  };
+  addBtn.onclick = submit;
+  input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+  addRow.append(input, addBtn);
+
+  const list = document.createElement('div');
+  list.id = 'todo-list';
+
+  wrap.append(head, addRow, list);
+  renderTodoList(key, list);
   return wrap;
 }
-function refreshLabelSummary(key) {
-  const el = document.getElementById('label-summary');
-  if (!el) return;
-  el.replaceWith(buildLabelSummary(key));
+
+function renderTodoList(key, container) {
+  container.innerHTML = '';
+  const todos = dayTodos(key);
+  if (todos.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'todo-empty';
+    empty.textContent = 'No to-dos yet';
+    container.appendChild(empty);
+    return;
+  }
+  todos.forEach(todo => {
+    const row = document.createElement('div');
+    row.className = 'todo-item' + (todo.done ? ' done' : '');
+
+    const check = document.createElement('button');
+    check.className = 'todo-check' + (todo.done ? ' done' : '');
+    check.setAttribute('aria-label', todo.done ? 'Mark not done' : 'Mark done');
+    check.textContent = todo.done ? '\u2713' : '';
+    check.onclick = () => toggleTodo(key, todo.id);
+
+    const text = document.createElement('div');
+    text.className = 'todo-text';
+    text.textContent = todo.text;
+    text.title = todo.text;
+
+    const del = document.createElement('button');
+    del.className = 'del-btn';
+    del.setAttribute('aria-label', 'Delete to-do');
+    del.textContent = '\u2715';
+    del.onclick = () => removeTodo(key, todo.id);
+
+    row.append(check, text, del);
+    container.appendChild(row);
+  });
+}
+
+function addTodo(key, text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return false;
+  if (!data[key]) data[key] = [];
+  data[key].push({ id: nextId(), kind: 'todo', text: trimmed, done: false });
+  save();
+  refreshTodos(key);
+  return true;
+}
+
+function toggleTodo(key, id) {
+  const todo = dayTodos(key).find(t => t.id === id);
+  if (!todo) return;
+  todo.done = !todo.done;
+  save();
+  refreshTodos(key);
+}
+
+function removeTodo(key, id) {
+  data[key] = (data[key] || []).filter(s => s.id !== id);
+  save();
+  refreshTodos(key);
+}
+
+// the second-by-second stats refresh deliberately leaves #todo-list alone —
+// rebuilding it would steal focus from the input mid-typing
+function refreshTodos(key) {
+  const list = document.getElementById('todo-list');
+  if (list) renderTodoList(key, list);
+  refreshSummaryBoxes(key);
 }
 
 function renderSlotList(key, container) {
   container.innerHTML = '';
-  const slots = (data[key] || []).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
+  const slots = daySlots(key).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
   const now = new Date();
 
   if (slots.length === 0) {
@@ -1064,7 +1256,7 @@ function tickFocus() {
 
   if (view === 'day' && activeDate) {
     const key = activeDate;
-    (data[key] || []).forEach(slot => refreshFocusArea(key, slot, now));
+    daySlots(key).forEach(slot => refreshFocusArea(key, slot, now));
     refreshStats(key);
   }
 }
@@ -1075,7 +1267,7 @@ function updateSlot(key, id, field, value, skipRebuild) {
   slot[field] = value;
   save();
   if (!skipRebuild) renderSlotList(key, document.getElementById('slot-list'));
-  if (field === 'label') refreshLabelSummary(key);
+  if (field === 'label') refreshSummaryBoxes(key);
 }
 
 function attachTapHandlers(node, key, id) {
@@ -1103,7 +1295,7 @@ function refreshStats(key) {
   if (bv) bv.textContent = fmtHours(bledHours(key));
   const brv = document.getElementById('day-break-val');
   if (brv) brv.textContent = fmtHours(breakHours(key));
-  refreshLabelSummary(key);
+  refreshSummaryBoxes(key);
 }
 
 // single tap = completion mark. Fully independent of bled and of focus time:
@@ -1127,13 +1319,13 @@ function toggleBled(key, id) {
 
 function addSlot(key) {
   if (!data[key]) data[key] = [];
-  const existing = data[key].slice().sort((a, b) => (a.start < b.start ? -1 : 1));
+  const existing = daySlots(key).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
   const last = existing[existing.length - 1];
   const start = last ? last.end : '09:00';
   const [h, m] = start.split(':').map(Number);
   const eh = Math.min(h + 1, 23);
   const end = pad(eh) + ':' + pad(m);
-  data[key].push({ id: Date.now(), start, end, label: '', done: false, bled: false, focusSeconds: 0 });
+  data[key].push({ id: nextId(), start, end, label: '', done: false, bled: false, focusSeconds: 0 });
   save();
   renderSlotList(key, document.getElementById('slot-list'));
 }
@@ -1155,7 +1347,7 @@ function tick() {
   const clockEl = document.getElementById('clock');
   if (clockEl) clockEl.textContent = fmtClock(now);
 
-  const slots = (data[key] || []).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
+  const slots = daySlots(key).slice().sort((a, b) => (a.start < b.start ? -1 : 1));
   const totalRemaining = slots.reduce((sum, s) => sum + remainingOf(s, key, now), 0);
   const remEl = document.getElementById('remaining');
   if (remEl) remEl.textContent = fmtDuration(totalRemaining);
@@ -1261,6 +1453,9 @@ function mergeSlots(local, remote) {
   (local || []).forEach(l => {
     const r = out[l.id];
     if (!r) { out[l.id] = Object.assign({}, l); return; }
+    // a to-do has no time to lose, so the union used below would only ever
+    // resurrect a tick the other device already cleared — take local as-is
+    if (l.kind === 'todo' || r.kind === 'todo') { out[l.id] = Object.assign({}, l); return; }
     // whichever side logged more focus time is treated as the fresher edit
     // for the descriptive fields; the numeric and boolean fields take the
     // safer union so nothing recorded on either device disappears
