@@ -113,6 +113,8 @@
   .reset-btn:hover { background: #1A1D22; }
   .stop-btn { background: #141B2E; border: 1px solid #6C8CFF; color: #8FA8FF; font-size: 12px; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-family: 'IBM Plex Mono', monospace; }
   .stop-btn:hover { background: #182042; }
+  .live-elsewhere { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8FA8FF; font-family: 'IBM Plex Mono', monospace; }
+  .live-elsewhere .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #6C8CFF; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
   .time-inputs { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
   input[type="time"] { background: #0B0D10; border: 1px solid #262B33; border-radius: 6px; color: #E7E9EC; font-family: 'IBM Plex Mono', monospace; font-size: 13px; padding: 5px 4px; width: 84px; }
   input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.6); }
@@ -233,6 +235,8 @@ let calMonth = today.getMonth(); // 0-indexed
 let activeDate = null;           // "YYYY-MM-DD" for day view
 const focusTimers = {};          // { [slotId]: { key, startedAt } }, mirrored into FOCUS_KEY
 const FOCUS_KEY = 'schedule-calendar-focus';
+const LIVE_HEARTBEAT_MS = 45000; // how often a running session pings slot.live while synced
+const LIVE_STALE_MS = 120000;    // how long a viewer trusts a heartbeat before treating it as dead
 
 // Local storage is the primary write target: it is instant, works offline, and
 // means the app is never blank. Supabase is the durable, cross-device copy.
@@ -265,9 +269,13 @@ function save() {
      2. focusTimers is mirrored to localStorage, so a reload resumes the
         session instead of silently dropping it.
 
-   The timer map is kept OUT of `data` on purpose: a running session
-   belongs to one device, and syncing it would make the tablet believe
-   the phone's session was its own. Only the banked seconds sync.
+   The timer map itself is kept OUT of `data` on purpose: a running session
+   belongs to one device, and syncing the map would make the tablet believe
+   the phone's session was its own. Only the banked seconds sync, plus a
+   lightweight `slot.live` heartbeat ({ startedAt, heartbeatAt }) so other
+   devices can *display* "running elsewhere" without ever being able to
+   control or claim the session. A heartbeat older than LIVE_STALE_MS is
+   treated as dead by viewers, so a crashed tab can't strand a stale badge.
    --------------------------------------------------------------------- */
 
 function saveFocusTimers() {
@@ -285,6 +293,7 @@ function finalizeTimer(idKey, upto) {
     const end = combineDateTime(t.key, slot.end).getTime();
     const cappedNow = Math.min(upto === undefined ? Date.now() : upto, end);
     slot.focusSeconds = (slot.focusSeconds || 0) + Math.max(0, (cappedNow - t.startedAt) / 1000);
+    delete slot.live;
   }
   delete focusTimers[idKey];
 }
@@ -292,6 +301,10 @@ function finalizeTimer(idKey, upto) {
 // Bank what has accrued so far without ending the session: the elapsed time
 // moves into focusSeconds and the clock restarts from now. Banking and
 // resetting together is what stops a second checkpoint double-counting.
+// Also runs on a timer (LIVE_HEARTBEAT_MS) while a session is open in the
+// foreground — not just on hide/pagehide — so other devices can see roughly
+// live progress via slot.live instead of the tablet looking "stopped" until
+// it's backgrounded or Stop is pressed.
 function checkpointFocus() {
   const ids = Object.keys(focusTimers);
   if (!ids.length) return;
@@ -305,8 +318,15 @@ function checkpointFocus() {
     const cappedNow = Math.min(nowMs, end);
     const gained = Math.max(0, (cappedNow - t.startedAt) / 1000);
     if (gained > 0) { slot.focusSeconds = (slot.focusSeconds || 0) + gained; touched = true; }
-    if (nowMs >= end) { delete focusTimers[idKey]; touched = true; }
-    else { t.startedAt = nowMs; }
+    if (nowMs >= end) {
+      delete focusTimers[idKey];
+      delete slot.live;
+      touched = true;
+    } else {
+      t.startedAt = nowMs;
+      slot.live = { startedAt: (slot.live && slot.live.startedAt) || nowMs, heartbeatAt: nowMs };
+      touched = true;
+    }
   });
   saveFocusTimers();
   if (touched) save();
@@ -1160,6 +1180,16 @@ function buildFocusArea(key, slot, now) {
     stopBtn.onclick = () => stopFocus(key, slot.id);
     wrap.append(cd, resetBtn, stopBtn);
     container.appendChild(wrap);
+  } else if (slot.live && (now.getTime() - slot.live.heartbeatAt) < LIVE_STALE_MS) {
+    // a session is running on another device: its heartbeat is still fresh,
+    // so show that instead of a Start button rather than risk a second
+    // session on this device double-counting the same time
+    const badge = document.createElement('div');
+    badge.className = 'live-elsewhere';
+    const startedAt = new Date(slot.live.startedAt);
+    badge.innerHTML = '<span class="live-dot"></span>Live on another device · started ' +
+      pad(startedAt.getHours()) + ':' + pad(startedAt.getMinutes());
+    container.appendChild(badge);
   } else {
     const btn = document.createElement('button');
     btn.className = 'focus-btn';
@@ -1199,10 +1229,12 @@ function startFocus(key, id) {
     // pull the slot's start time forward to right now, so tapping "Start now"
     // on a not-yet-started slot begins it immediately instead of waiting
     slot.start = pad(now.getHours()) + ':' + pad(now.getMinutes());
-    save();
   }
-  focusTimers[String(id)] = { key, startedAt: Date.now() };
+  const nowMs = now.getTime();
+  focusTimers[String(id)] = { key, startedAt: nowMs };
+  slot.live = { startedAt: nowMs, heartbeatAt: nowMs };
   saveFocusTimers();
+  save();
   // always rebuild the whole row (not just the focus controls) so the visible
   // start time is guaranteed to match the data, never left showing a stale value
   renderSlotList(key, document.getElementById('slot-list'));
@@ -1225,7 +1257,7 @@ function resetFocus(key, id) {
   const slot = (data[key] || []).find(s => s.id === id);
   delete focusTimers[String(id)];   // Reset discards the session's time by design
   saveFocusTimers();
-  if (slot) refreshFocusArea(key, slot, new Date());
+  if (slot) { delete slot.live; save(); refreshFocusArea(key, slot, new Date()); }
   refreshStats(key);
 }
 
@@ -1648,6 +1680,10 @@ async function initSync() {
   await initSync();
 })();
 setInterval(() => { tickFocus(); tick(); }, 1000);
+// heartbeat a running session's progress even while the tab stays in the
+// foreground, so another device isn't stuck showing it as not-running
+// until this one backgrounds or Stop is pressed
+setInterval(checkpointFocus, LIVE_HEARTBEAT_MS);
 </script>
 </body>
 </html>
